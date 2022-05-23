@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "cpd": {
+      "commandName": "Project",
+      "commandLineArgs": "-r c:\\src\\carbon\\ci\\*.yml"
+    }
+  }
+}

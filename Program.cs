@@ -28,11 +28,26 @@ namespace Azure.AI.Details.Common.CLI
 
     public partial class Program
     {
-        public static int Main(string[] mainArgs)
+        public static int Main(string[] args)
         {
-            GetPathAndPattern(mainArgs, out string path, out string pattern);
+            var files = FindFiles(args);
+            if (files == null)
+            {
+                Console.WriteLine("CPD, Copy Paste Detective");
+                Console.WriteLine();
+                Console.WriteLine("  USAGE: cpd PATTERN");
+                Console.WriteLine("     OR: cpd PATH\\PATTERN");
+                Console.WriteLine();
+                Console.WriteLine("  EXAMPLES");
+                Console.WriteLine();
+                Console.WriteLine("     cpd *.yml");
+                Console.WriteLine(RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                    ? "     cpd d:\\src\\carbon\\ci\\*.yml"
+                    : "     cpd ~/src/carbon/ci/*.yml");
+                return 1;
+            }
 
-            var fileLines = GetFileLines(path, pattern);
+            var fileLines = ReadFileLineAndTextFromFiles(files);
             var fileLineTextMap = CreateFileLineTextMap(fileLines);
             var fileNameMap = CreateFileNameMap(fileLines, fileLineTextMap);
             var line2Matches = Find2LineMatches(fileLineTextMap, fileNameMap);
@@ -129,18 +144,49 @@ namespace Azure.AI.Details.Common.CLI
             return map;
         }
 
-        private static void GetPathAndPattern(string[] mainArgs, out string path, out string pattern)
+        private static IEnumerable<string>? FindFiles(string[] args)
         {
-            path = "d:\\src\\carbon\\ci"; // Directory.GetCurrentDirectory();
-            pattern = "*.yml";
+            var recursiveOptions = new EnumerationOptions() { RecurseSubdirectories = false };
+            var triedToFindFiles = false;
+
+            var list = new List<string>();
+            for (int i = 0; i < args.Length; i++)
+            {
+                string arg = args[i];
+                if (arg == "/r" || arg == "-r")
+                {
+                    recursiveOptions.RecurseSubdirectories = true;
+                    continue;
+                }
+
+                string path, pattern;
+                if (arg.Contains(Path.DirectorySeparatorChar))
+                {
+                    var at = arg.LastIndexOf(Path.DirectorySeparatorChar);
+                    path = arg.Substring(0, at);
+                    pattern = arg.Substring(at + 1);
+                }
+                else
+                {
+                    path = Directory.GetCurrentDirectory();
+                    pattern = arg;
+                }
+
+                triedToFindFiles = true;
+                foreach (var file in Directory.EnumerateFiles(path, pattern, recursiveOptions))
+                {
+                    list.Add(Path.Combine(path, file));
+                }
+            }
+
+            return triedToFindFiles ? list : null;
         }
 
-        public static IEnumerable<FileLineAndText> GetFileLines(string path, string pattern)
+        public static IEnumerable<FileLineAndText> ReadFileLineAndTextFromFiles(IEnumerable<string> fileNames)
         {
             FileLineAndText? prev = null;
-            foreach (var file in Directory.EnumerateFiles(path, pattern))
+            foreach (var fileName in fileNames)
             {
-                var fileName = Path.Combine(path, file);
                 var lines = File.ReadAllLines(fileName);
                 for (int i = 0; i < lines.Length; i++)
                 {
