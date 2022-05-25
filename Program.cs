@@ -52,13 +52,50 @@ namespace Azure.AI.Details.Common.CLI
             var fileNameMap = CreateFileNameMap(fileLines, fileLineTextMap);
             var line2Matches = Find2LineMatches(fileLineTextMap, fileNameMap);
 
+            Print2LineMatches(fileLineTextMap, line2Matches);
+            Print2LineSummary(fileLineTextMap, line2Matches);
+
+            return 0;
+        }
+
+        private static void Print2LineSummary(Dictionary<string, List<FileLineAndText>> fileLineTextMap, Dictionary<FileLineAndText, List<FileLineAndText>> line2Matches)
+        {
+            var grouped = line2Matches
+                .GroupBy(x => KeyFromText(x.Key.Text) + "\n" + KeyFromText(x.Key.Next?.Text))
+                .OrderBy(g => g.First().Value.Count());
+            foreach (var group in grouped)
+            {
+                var firstMatch = group.First();
+                var count2Line = firstMatch.Value.Count();
+                Console.WriteLine($"-----\n{count2Line + 1,4}");
+
+                var line1 = firstMatch.Key;
+                var countLine1 = fileLineTextMap[KeyFromText(line1.Text)].Count();
+                Console.WriteLine($"[{countLine1,3}] {line1.Text}");
+
+                var line2 = line1.Next;
+                var countLine2 = fileLineTextMap[KeyFromText(line2?.Text)].Count();
+                Console.WriteLine($"[{countLine2,3}] {line2?.Text}");
+                Console.WriteLine($"-----");
+
+                Console.WriteLine($"{firstMatch.Key.FileName}({firstMatch.Key.LineNumber})");
+                foreach (var match in firstMatch.Value)
+                {
+                    Console.WriteLine($"{match.FileName}({match.LineNumber})");
+                }
+                Console.WriteLine($"\n");
+            }
+        }
+
+        private static void Print2LineMatches(Dictionary<string, List<FileLineAndText>> fileLineTextMap, Dictionary<FileLineAndText, List<FileLineAndText>> line2Matches)
+        {
             foreach (var line2Match in line2Matches)
             {
                 var line1 = line2Match.Key;
                 var line2 = line1.Next;
 
                 var count2Line = line2Match.Value.Count();
-                Console.WriteLine($"---\n{count2Line + 1}");
+                Console.WriteLine($"-----\n{count2Line + 1}");
 
                 var countLine1 = fileLineTextMap[KeyFromText(line1.Text)].Count();
                 Console.WriteLine($"[{countLine1,3}] {line1.FileName}({line1.LineNumber}): {line1.Text}");
@@ -66,8 +103,6 @@ namespace Azure.AI.Details.Common.CLI
                 var countLine2 = fileLineTextMap[KeyFromText(line2?.Text)].Count();
                 Console.WriteLine($"[{countLine2,3}] {line2?.FileName}({line2?.LineNumber}): {line2?.Text}");
             }
-
-            return 0;
         }
 
         private static Dictionary<FileLineAndText, List<FileLineAndText>> Find2LineMatches(Dictionary<string, List<FileLineAndText>> fileLineTextMap, Dictionary<string, List<FileLineAndText>> fileNameMap)
@@ -93,7 +128,9 @@ namespace Azure.AI.Details.Common.CLI
                             {
                                 var lineNextText = line.Next.Text;
                                 var matchNextText = match.Next.Text;
-                                if (KeyFromText(lineNextText) == KeyFromText(matchNextText))
+                                if (KeyFromText(lineNextText) == KeyFromText(matchNextText) &&
+                                    !string.IsNullOrWhiteSpace(line.Text) &&
+                                    !string.IsNullOrWhiteSpace(lineNextText))
                                 {
                                     if (list == null)
                                     {
@@ -168,15 +205,17 @@ namespace Azure.AI.Details.Common.CLI
                 }
                 else
                 {
-                    path = Directory.GetCurrentDirectory();
+                    path = ".";
                     pattern = arg;
                 }
 
-                triedToFindFiles = true;
+                path = Path.Combine(Directory.GetCurrentDirectory(), path);
                 foreach (var file in Directory.EnumerateFiles(path, pattern, recursiveOptions))
                 {
                     list.Add(Path.Combine(path, file));
                 }
+
+                triedToFindFiles = true;
             }
 
             return triedToFindFiles ? list : null;

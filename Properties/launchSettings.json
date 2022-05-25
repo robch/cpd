@@ -2,7 +2,8 @@
   "profiles": {
     "cpd": {
       "commandName": "Project",
-      "commandLineArgs": "-r c:\\src\\carbon\\ci\\*.yml"
+      "commandLineArgs": "ci\\*.yml",
+      "workingDirectory": "d:\\src\\carbon"
     }
   }
 }
