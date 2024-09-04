@@ -35,15 +35,15 @@ namespace Azure.AI.Details.Common.CLI
             {
                 Console.WriteLine("CPD, Copy Paste Detective");
                 Console.WriteLine();
-                Console.WriteLine("  USAGE: cpd PATTERN");
-                Console.WriteLine("     OR: cpd PATH\\PATTERN");
+                Console.WriteLine("  USAGE: cpd [-r] PATTERN");
+                Console.WriteLine("     OR: cpd [-r] PATH\\PATTERN");
                 Console.WriteLine();
                 Console.WriteLine("  EXAMPLES");
                 Console.WriteLine();
-                Console.WriteLine("     cpd *.yml");
+                Console.WriteLine("     cpd -r *.md");
                 Console.WriteLine(RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-                    ? "     cpd d:\\src\\carbon\\ci\\*.yml"
-                    : "     cpd ~/src/carbon/ci/*.yml");
+                    ? "     cpd -r d:\\src\\book-of-ai\\*.md"
+                    : "     cpd -r ~/src/book-of-ai/*.md");
                 return 1;
             }
 
