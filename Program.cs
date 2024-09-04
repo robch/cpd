@@ -1,10 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace Azure.AI.Details.Common.CLI
@@ -28,6 +29,9 @@ namespace Azure.AI.Details.Common.CLI
 
     public partial class Program
     {
+        private static Dictionary<int, Regex> _regexMap = new Dictionary<int, Regex>();
+        private static int _linesToCompare = 2;
+
         public static int Main(string[] args)
         {
             var files = FindFiles(args);
@@ -35,12 +39,12 @@ namespace Azure.AI.Details.Common.CLI
             {
                 Console.WriteLine("CPD, Copy Paste Detective");
                 Console.WriteLine();
-                Console.WriteLine("  USAGE: cpd [-r] PATTERN");
-                Console.WriteLine("     OR: cpd [-r] PATH\\PATTERN");
+                Console.WriteLine("  USAGE: cpd [-n LINES] [-# REGEX] [-r] PATTERN");
+                Console.WriteLine("     OR: cpd [-n LINES] [-# REGEX] [-r] PATH\\PATTERN");
                 Console.WriteLine();
                 Console.WriteLine("  EXAMPLES");
                 Console.WriteLine();
-                Console.WriteLine("     cpd -r *.md");
+                Console.WriteLine("     cpd -r *.md -n 3 -1 \"```.*bash\"");
                 Console.WriteLine(RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
                     ? "     cpd -r d:\\src\\book-of-ai\\*.md"
                     : "     cpd -r ~/src/book-of-ai/*.md");
@@ -50,34 +54,38 @@ namespace Azure.AI.Details.Common.CLI
             var fileLines = ReadFileLineAndTextFromFiles(files);
             var fileLineTextMap = CreateFileLineTextMap(fileLines);
             var fileNameMap = CreateFileNameMap(fileLines, fileLineTextMap);
-            var line2Matches = Find2LineMatches(fileLineTextMap, fileNameMap);
+            var lineMatches = FindLineMatches(fileLineTextMap, fileNameMap, _linesToCompare);
 
-            Print2LineMatches(fileLineTextMap, line2Matches);
-            Print2LineSummary(fileLineTextMap, line2Matches);
+            // PrintLineMatches(fileLineTextMap, lineMatches, _linesToCompare);
+            PrintLineSummary(fileLineTextMap, lineMatches, _linesToCompare);
 
             return 0;
         }
 
-        private static void Print2LineSummary(Dictionary<string, List<FileLineAndText>> fileLineTextMap, Dictionary<FileLineAndText, List<FileLineAndText>> line2Matches)
+        private static void PrintLineSummary(
+            Dictionary<string, List<FileLineAndText>> fileLineTextMap, 
+            Dictionary<FileLineAndText, List<FileLineAndText>> lineMatches, 
+            int linesToCompare)
         {
-            var grouped = line2Matches
-                .GroupBy(x => KeyFromText(x.Key.Text) + "\n" + KeyFromText(x.Key.Next?.Text))
+            var grouped = lineMatches
+                .GroupBy(x =>
+                    string.Join("\n", Enumerable.Range(0, linesToCompare)
+                        .Select(i => KeyFromText(GetNthLine(x.Key, i)?.Text))))
                 .OrderBy(g => g.First().Value.Count());
             foreach (var group in grouped)
             {
                 var firstMatch = group.First();
-                var count2Line = firstMatch.Value.Count();
-                Console.WriteLine($"-----\n{count2Line + 1,4}");
+                var countMatches = firstMatch.Value.Count();
+                Console.WriteLine($"-----\n{countMatches + 1,5}");
 
-                var line1 = firstMatch.Key;
-                var countLine1 = fileLineTextMap[KeyFromText(line1.Text)].Count();
-                Console.WriteLine($"[{countLine1,3}] {line1.Text}");
+                for (int i = 0; i < linesToCompare; i++)
+                {
+                    var line = GetNthLine(firstMatch.Key, i);
+                    var countLine = fileLineTextMap[KeyFromText(line?.Text)].Count();
+                    Console.WriteLine($"[{countLine,4}] {line?.Text}");
+                }
 
-                var line2 = line1.Next;
-                var countLine2 = fileLineTextMap[KeyFromText(line2?.Text)].Count();
-                Console.WriteLine($"[{countLine2,3}] {line2?.Text}");
                 Console.WriteLine($"-----");
-
                 Console.WriteLine($"{firstMatch.Key.FileName}({firstMatch.Key.LineNumber})");
                 foreach (var match in firstMatch.Value)
                 {
@@ -87,36 +95,49 @@ namespace Azure.AI.Details.Common.CLI
             }
         }
 
-        private static void Print2LineMatches(Dictionary<string, List<FileLineAndText>> fileLineTextMap, Dictionary<FileLineAndText, List<FileLineAndText>> line2Matches)
+        private static FileLineAndText? GetNthLine(FileLineAndText line, int n)
         {
-            foreach (var line2Match in line2Matches)
+            var current = line;
+            for (int i = 0; i < n; i++)
             {
-                var line1 = line2Match.Key;
-                var line2 = line1.Next;
+                current = current?.Next;
+            }
+            return current;
+        }
 
-                var count2Line = line2Match.Value.Count();
-                Console.WriteLine($"-----\n{count2Line + 1}");
+        private static void PrintLineMatches(
+            Dictionary<string, List<FileLineAndText>> fileLineTextMap, 
+            Dictionary<FileLineAndText, List<FileLineAndText>> lineMatches, 
+            int linesToCompare)
+        {
+            foreach (var lineMatch in lineMatches)
+            {
+                var countMatches = lineMatch.Value.Count();
+                Console.WriteLine($"-----\n{countMatches + 1}");
 
-                var countLine1 = fileLineTextMap[KeyFromText(line1.Text)].Count();
-                Console.WriteLine($"[{countLine1,3}] {line1.FileName}({line1.LineNumber}): {line1.Text}");
-
-                var countLine2 = fileLineTextMap[KeyFromText(line2?.Text)].Count();
-                Console.WriteLine($"[{countLine2,3}] {line2?.FileName}({line2?.LineNumber}): {line2?.Text}");
+                for (int i = 0; i < linesToCompare; i++)
+                {
+                    var line = GetNthLine(lineMatch.Key, i);
+                    var countLine = fileLineTextMap[KeyFromText(line?.Text)].Count();
+                    Console.WriteLine($"[{countLine,4}] {line?.FileName}({line?.LineNumber}): {line?.Text}");
+                }
             }
         }
 
-        private static Dictionary<FileLineAndText, List<FileLineAndText>> Find2LineMatches(Dictionary<string, List<FileLineAndText>> fileLineTextMap, Dictionary<string, List<FileLineAndText>> fileNameMap)
+        private static Dictionary<FileLineAndText, List<FileLineAndText>> FindLineMatches(
+            Dictionary<string, List<FileLineAndText>> fileLineTextMap, 
+            Dictionary<string, List<FileLineAndText>> fileNameMap, 
+            int linesToCompare)
         {
-            var line2Matches = new Dictionary<FileLineAndText, List<FileLineAndText>>();
+            var lineMatches = new Dictionary<FileLineAndText, List<FileLineAndText>>();
             foreach (var file in fileNameMap)
             {
                 var lines = file.Value;
                 foreach (var line in lines)
                 {
-                    if (line.LineNumber + 1 == line.Next?.LineNumber)
+                    if (IsNthLineValid(line, linesToCompare))
                     {
                         List<FileLineAndText>? list = null;
-
                         var key = KeyFromText(line.Text);
                         var matchesInOtherFiles = fileLineTextMap[key].Where(x =>
                             x.FileName != line.FileName ||
@@ -124,32 +145,61 @@ namespace Azure.AI.Details.Common.CLI
 
                         foreach (var match in matchesInOtherFiles)
                         {
-                            if (match.LineNumber + 1 == match.Next?.LineNumber)
+                            if (IsNthLineMatch(line, match, linesToCompare))
                             {
-                                var lineNextText = line.Next.Text;
-                                var matchNextText = match.Next.Text;
-                                if (KeyFromText(lineNextText) == KeyFromText(matchNextText) &&
-                                    !string.IsNullOrWhiteSpace(line.Text) &&
-                                    !string.IsNullOrWhiteSpace(lineNextText))
+                                if (list == null)
                                 {
-                                    if (list == null)
-                                    {
-                                        list = new List<FileLineAndText>();
-                                    }
-                                    list.Add(match);
+                                    list = new List<FileLineAndText>();
                                 }
+                                list.Add(match);
                             }
                         }
 
                         if (list != null)
                         {
-                            line2Matches.Add(line, list);
+                            lineMatches.Add(line, list);
                         }
                     }
                 }
             }
 
-            return line2Matches;
+            return lineMatches;
+        }
+
+        private static bool IsNthLineValid(FileLineAndText line, int n)
+        {
+            var current = line;
+            for (int i = 0; i < n; i++)
+            {
+                if (current?.Next == null) return false;
+                current = current.Next;
+            }
+            return true;
+        }
+
+        private static bool IsNthLineMatch(FileLineAndText? line1, FileLineAndText? line2, int n)
+        {
+            for (int i = 0; i < n; i++)
+            {
+                if (line1 == null || line2 == null)
+                {
+                    return false;
+                }
+                if (KeyFromText(line1.Text) != KeyFromText(line2.Text))
+                {
+                    return false;
+                }
+                if (_regexMap.TryGetValue(i + 1, out var regex))
+                {
+                    if (!regex.IsMatch(line1.Text) || !regex.IsMatch(line2.Text))
+                    {
+                        return false;
+                    }
+                }
+                line1 = line1.Next;
+                line2 = line2.Next;
+            }
+            return true;
         }
 
         private static string KeyFromText(string? text)
@@ -194,6 +244,23 @@ namespace Azure.AI.Details.Common.CLI
                 {
                     recursiveOptions.RecurseSubdirectories = true;
                     continue;
+                }
+
+                if ((arg == "/n" || arg == "-n") && i + 1 < args.Length)
+                {
+                    _linesToCompare = int.Parse(args[++i]);
+                    continue;
+                }
+
+                if ((arg.StartsWith("-") || arg.StartsWith("/")))
+                {
+                    if (int.TryParse(arg.Substring(1), out var n) && i + 1 < args.Length)
+                    {
+                        _regexMap[n] = new Regex(args[++i]);
+                        continue;
+                    }
+                    Console.WriteLine($"Unknown option: {arg}");
+                    return null;
                 }
 
                 string path, pattern;
